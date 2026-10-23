@@ -35,6 +35,7 @@ build/
 
 # Supabase CLI
 supabase/.temp/
+supabase/functions/.env
 
 # Python
 __pycache__/
