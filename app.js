@@ -370,6 +370,7 @@ async function checkSearchReadiness() {
         setSearchReady('rag', false);
     } finally {
         readinessCheckRunning = false;
+        loadPopularSearches();
     }
 }
 
@@ -410,6 +411,8 @@ function setSearchReady(type, ready) {
 async function keywordSearch() {
     const query = keywordInput ? keywordInput.value.trim() : '';
     if (!query || !supabaseClient) return;
+
+    recordSearch(query, 'keyword');
 
     showLoading(true);
     clearResults('keyword');
@@ -475,6 +478,8 @@ async function semanticSearch() {
     const query = semanticInput ? semanticInput.value.trim() : '';
     if (!query || !supabaseClient) return;
 
+    recordSearch(query, 'semantic');
+
     showLoading(true);
     clearResults('semantic');
 
@@ -522,6 +527,8 @@ async function semanticSearch() {
 async function askQuestion() {
     const question = ragInput ? ragInput.value.trim() : '';
     if (!question || !supabaseClient) return;
+
+    recordSearch(question, 'rag');
 
     showLoading(true);
     clearResults('rag');
@@ -582,6 +589,67 @@ async function askQuestion() {
 // ============================================
 // SHARED SEARCH UTILITIES
 // ============================================
+
+async function recordSearch(query, searchType) {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery || !supabaseClient) return;
+
+    try {
+        const { error } = await supabaseClient.rpc('record_search', {
+            p_query: normalizedQuery,
+            p_search_type: searchType
+        });
+
+        if (!error) loadPopularSearches();
+    } catch (error) {
+        console.warn('Could not record popular search:', error.message);
+    }
+}
+
+async function loadPopularSearches() {
+    const list = document.getElementById('popular-searches-list');
+    if (!list || !supabaseClient) return;
+
+    const { data, error } = await supabaseClient
+        .from('popular_searches')
+        .select('query, search_type, search_count, last_searched')
+        .order('search_count', { ascending: false })
+        .order('last_searched', { ascending: false })
+        .limit(10);
+
+    if (error) {
+        list.innerHTML = '<span class="popular-searches-empty">Popular searches are unavailable. Run the database schema setup to enable them.</span>';
+        return;
+    }
+
+    if (!data || data.length === 0) {
+        list.innerHTML = '<span class="popular-searches-empty">No searches yet. Try a search to start the list.</span>';
+        return;
+    }
+
+    const typeLabels = { keyword: 'Keyword', semantic: 'Semantic', rag: 'Question' };
+    list.innerHTML = data.map((item) => {
+        const count = Number(item.search_count).toLocaleString();
+        return `<button type="button" class="popular-search-button" data-search-type="${escapeHtml(item.search_type)}" data-query="${escapeHtml(item.query)}" ${document.getElementById(`${item.search_type}-input`)?.disabled ? 'disabled' : ''}>
+            <span class="popular-search-query">${escapeHtml(item.query)}</span>
+            <span class="popular-search-meta">${escapeHtml(typeLabels[item.search_type] || item.search_type)} · ${count}</span>
+        </button>`;
+    }).join('');
+}
+
+document.addEventListener('click', (event) => {
+    const button = event.target.closest('.popular-search-button');
+    if (!button || button.disabled) return;
+
+    const searchType = button.dataset.searchType;
+    const input = document.getElementById(`${searchType}-input`);
+    if (!input) return;
+
+    input.value = button.dataset.query || '';
+    if (searchType === 'keyword') keywordSearch();
+    if (searchType === 'semantic') semanticSearch();
+    if (searchType === 'rag') askQuestion();
+});
 
 // Get embedding via Edge Function
 async function getEmbedding(text) {

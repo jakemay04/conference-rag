@@ -101,6 +101,55 @@ ON page_views FOR SELECT
 TO anon, authenticated
 USING (true);
 
+-- ============================================
+-- Popular Searches (authenticated analytics)
+-- ============================================
+CREATE TABLE IF NOT EXISTS popular_searches (
+    normalized_query TEXT NOT NULL,
+    query TEXT NOT NULL,
+    search_type TEXT NOT NULL CHECK (search_type IN ('keyword', 'semantic', 'rag')),
+    search_count BIGINT NOT NULL DEFAULT 1 CHECK (search_count > 0),
+    last_searched TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (normalized_query, search_type)
+);
+
+ALTER TABLE popular_searches ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow authenticated users to read popular searches" ON popular_searches;
+CREATE POLICY "Allow authenticated users to read popular searches"
+ON popular_searches FOR SELECT
+TO authenticated
+USING (true);
+
+-- Count searches atomically without granting clients direct table writes.
+CREATE OR REPLACE FUNCTION record_search(p_query TEXT, p_search_type TEXT)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  trimmed_query TEXT := btrim(p_query);
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+  IF trimmed_query = '' OR p_search_type NOT IN ('keyword', 'semantic', 'rag') THEN
+    RAISE EXCEPTION 'Invalid search';
+  END IF;
+
+  INSERT INTO popular_searches (normalized_query, query, search_type)
+  VALUES (lower(trimmed_query), trimmed_query, p_search_type)
+  ON CONFLICT (normalized_query, search_type) DO UPDATE
+  SET query = EXCLUDED.query,
+      search_count = popular_searches.search_count + 1,
+      last_searched = NOW();
+END;
+$$;
+
+REVOKE ALL ON FUNCTION record_search(TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION record_search(TEXT, TEXT) TO authenticated;
+
 -- Create function for similarity search
 CREATE OR REPLACE FUNCTION match_sentences(
   query_embedding vector(1536),

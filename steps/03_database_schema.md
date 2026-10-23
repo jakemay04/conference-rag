@@ -25,21 +25,24 @@ Your database is the foundation for all three search modes. The schema you creat
 python scripts/01_create_schema.py
 ```
 
-This script creates:
+This script creates or updates:
 - **pgvector extension** — Adds vector data type and similarity operators to PostgreSQL
 - **`sentence_embeddings` table** — Stores talk sentences with their embedding vectors (🔒 **auth-only**)
 - **`page_views` table** — Records every page visit (🌍 **public**)
+- **`popular_searches` table** — Counts searches by query and search mode (🔒 **auth-only**)
 - **RLS policies** — Controls who can access each table
 - **`match_sentences()` function** — A stored procedure for vector similarity search
+- **`record_search()` function** — Counts a search atomically when a signed-in user runs one
 
 > 💡 **Ask your AI assistant**: *"What is pgvector and how does cosine similarity search work?"*
 
-### Two Tables, Two Access Levels
+### Tables and Access Levels
 
 | Table | Who can read? | Who can write? | Why? |
 |-------|--------------|----------------|------|
 | `page_views` | 🌍 Anyone (anon + authenticated) | 🌍 Anyone | Public analytics — no secrets here |
 | `sentence_embeddings` | 🔒 Authenticated users only | 🔒 Service role only | Protected content — requires login |
+| `popular_searches` | 🔒 Authenticated users only | 🔒 `record_search()` function | Search popularity for the signed-in app |
 
 This is **Row Level Security (RLS)** in action. Both tables have RLS enabled, but their *policies* define very different access rules.
 
@@ -128,7 +131,7 @@ print(f"sentence_embeddings: {len(result.data)} rows (expected: 0) 🔒")
 
 - [ ] Script prints "✅ Database schema created successfully!"
 - [ ] Script prints "✅ Table verified" with a row count
-- [ ] You can see both `sentence_embeddings` and `page_views` in Supabase Dashboard → Table Editor
+- [ ] You can see `sentence_embeddings`, `page_views`, and `popular_searches` in Supabase Dashboard → Table Editor
 - [ ] (Optional) The RLS test snippet shows `page_views` is readable but `sentence_embeddings` returns 0 rows
 
 ## → Next: [Step 04: Scrape & Import Data](04_scrape_and_import.md)
