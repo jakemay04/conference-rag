@@ -7,6 +7,9 @@ project_id = "conference-rag"
 [functions.embed-question]
 verify_jwt = true
 
+[functions.generate-answer]
+verify_jwt = true
+
 [api]
 enabled = true
 # Port to use for the API URL.
